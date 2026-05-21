@@ -23,10 +23,8 @@ STATUS_LABELS = {
 }
 
 def serialize_order(order: dict) -> dict:
-    items = order.get("item") or []
-    if "items" not in order:
-        order = {**order, "items": items}
-    return order
+    items = order.get("items") or order.get("item") or []
+    return {**order, "items": items}
 
 @router.get("/")
 def get_orders():
