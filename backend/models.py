@@ -4,7 +4,7 @@ from uuid import UUID
 
 class OrderItem(BaseModel):
     name: str
-    quantity: str
+    quantity: int
     price: float
 
 class CreateOrderRequest(BaseModel):

@@ -14,7 +14,7 @@ VALID_TRANSITIONS = {
 
 STATUS_LABELS = {
     "pending":            "Pending Payment",
-    "payment_verified":   "Payment Verified",
+    "payment_verified":   "Payment Verified",   
     "inventory_checked":  "Inventory Checked",
     "preparing":          "Preparing",
     "out_for_delivery":   "Out for Delivery",
@@ -22,17 +22,23 @@ STATUS_LABELS = {
     "cancelled":          "Cancelled",
 }
 
+def serialize_order(order: dict) -> dict:
+    items = order.get("item") or []
+    if "items" not in order:
+        order = {**order, "items": items}
+    return order
+
 @router.get("/")
 def get_orders():
     res = supabase.table("orders").select("*").order("created_at", desc=True).execute()
-    return res.data
+    return [serialize_order(o) for o in res.data]
 
 @router.get("/{order_id}")
 def get_order(order_id: str):
     res = supabase.table("orders").select("*").eq("id", order_id).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Order not found")
-    return res.data
+    return serialize_order(res.data)
 
 @router.get("/{order_id}/logs")
 def get_order_logs(order_id: str):
@@ -50,7 +56,7 @@ def create_order(body: CreateOrderRequest):
         "notes": body.notes,
         "status": "pending",
     }).execute()
-    order = res.data[0]
+    order = serialize_order(res.data[0])
     # Log creation
     supabase.table("order_logs").insert({
         "order_id": order["id"],
