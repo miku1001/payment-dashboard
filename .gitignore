@@ -1,0 +1,11 @@
+# Environment files
+.env
+.env.local
+.env.*
+
+# Explicitly ignore service-specific env files
+/backend/.env
+/frontend/.env
+
+# Node
+node_modules/
