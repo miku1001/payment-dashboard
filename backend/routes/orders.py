@@ -48,14 +48,44 @@ def get_order_logs(order_id: str):
 @router.post("/")
 def create_order(body: CreateOrderRequest):
     items = [item.model_dump() for item in body.items]
-    res = supabase.table("orders").insert({
-        "customer_name": body.customer_name,
-        "customer_email": body.customer_email,
-        "item": items,
-        "total_amount": body.total_amount,
-        "notes": body.notes,
-        "status": "pending",
-    }).execute()
+
+    # Validate inventory and reserve stock on order creation.
+    for item in items:
+        inv = supabase.table("inventory").select("id, quantity").eq("item_name", item["name"]).single().execute()
+        if not inv.data:
+            raise HTTPException(status_code=400, detail=f"Item not found: {item['name']}")
+        available = int(inv.data.get("quantity") or 0)
+        requested = int(item.get("quantity") or 0)
+        if requested <= 0:
+            raise HTTPException(status_code=400, detail=f"Invalid quantity for {item['name']}")
+        if available < requested:
+            raise HTTPException(status_code=400, detail=f"Insufficient stock for {item['name']}")
+
+    # Deduct stock (best-effort; no transaction support here).
+    updated = []
+    for item in items:
+        inv = supabase.table("inventory").select("id, quantity").eq("item_name", item["name"]).single().execute()
+        new_qty = int(inv.data.get("quantity") or 0) - int(item.get("quantity") or 0)
+        res_inv = supabase.table("inventory").update({"quantity": new_qty}).eq("id", inv.data["id"]).execute()
+        updated.append({"id": inv.data["id"], "quantity": int(inv.data.get("quantity") or 0), "new_quantity": new_qty})
+        if not res_inv.data:
+            raise HTTPException(status_code=500, detail=f"Failed to update inventory for {item['name']}")
+
+    try:
+        res = supabase.table("orders").insert({
+            "customer_name": body.customer_name,
+            "customer_email": body.customer_email,
+            "item": items,
+            "total_amount": body.total_amount,
+            "notes": body.notes,
+            "status": "pending",
+        }).execute()
+    except Exception:
+        # Attempt rollback if order insert fails.
+        for inv in updated:
+            supabase.table("inventory").update({"quantity": inv["quantity"]}).eq("id", inv["id"]).execute()
+        raise
+
     order = serialize_order(res.data[0])
     # Log creation
     supabase.table("order_logs").insert({

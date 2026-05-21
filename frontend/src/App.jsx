@@ -399,6 +399,27 @@ function AdminDashboard() {
   const [showNew, setShowNew] = useState(false);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [inventory, setInventory] = useState([]);
+  const [invLoading, setInvLoading] = useState(true);
+  const [invError, setInvError] = useState("");
+  const [newItemName, setNewItemName] = useState("");
+  const [newQty, setNewQty] = useState(0);
+  const [newUnit, setNewUnit] = useState("pcs");
+  const [newPrice, setNewPrice] = useState(0);
+  const [invSaving, setInvSaving] = useState(false);
+
+  const fetchInventory = useCallback(async () => {
+    setInvLoading(true);
+    setInvError("");
+    try {
+      const res = await fetch(`${API}/inventory/`);
+      const data = await res.json();
+      setInventory(data);
+    } catch {
+      setInvError("Failed to load inventory.");
+    }
+    setInvLoading(false);
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -410,9 +431,41 @@ function AdminDashboard() {
       const updated = data.find(o => o.id === selected.id);
       if (updated) setSelected(updated);
     }
-  }, [selected?.id]);
+    fetchInventory();
+  }, [selected?.id, fetchInventory]);
 
   useEffect(() => { fetchOrders(); }, []);
+  useEffect(() => { fetchInventory(); }, []);
+
+  async function addInventoryItem() {
+    if (!newItemName.trim()) {
+      setInvError("Item name is required.");
+      return;
+    }
+    setInvSaving(true);
+    setInvError("");
+    try {
+      const res = await fetch(`${API}/inventory/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          item_name: newItemName.trim(),
+          quantity: Number(newQty) || 0,
+          unit: newUnit.trim() || "pcs",
+          price: Number(newPrice) || 0,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setNewItemName("");
+      setNewQty(0);
+      setNewUnit("pcs");
+      setNewPrice(0);
+      fetchInventory();
+    } catch {
+      setInvError("Unable to add item. Check if it already exists.");
+    }
+    setInvSaving(false);
+  }
 
   const counts = {};
   orders.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
@@ -445,6 +498,64 @@ function AdminDashboard() {
             <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>{s.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Inventory */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px,1fr) minmax(220px,320px)", gap: 12, marginBottom: 20 }}>
+        <div style={{ background: "var(--surface)", borderRadius: 14, padding: "16px 18px", border: "1px solid var(--border)", boxShadow: "var(--shadow-soft)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>AVAILABLE STOCK</div>
+            <button onClick={fetchInventory} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12 }}>Refresh</button>
+          </div>
+          {invLoading ? (
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading inventory...</div>
+          ) : inventory.length === 0 ? (
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>No inventory items.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8, maxHeight: 360, overflowY: "auto", paddingRight: 4 }}>
+              {inventory.map((inv) => (
+                <div key={inv.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-2)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{inv.item_name}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>₱{Number(inv.price).toLocaleString("en-PH", { minimumFractionDigits: 2 })} · {inv.unit || "pcs"}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{inv.quantity}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>in stock</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {invError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#b91c1c" }}>{invError}</div>
+          )}
+        </div>
+
+        <div style={{ background: "var(--surface)", borderRadius: 14, padding: "16px 18px", border: "1px solid var(--border)", boxShadow: "var(--shadow-soft)" }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600, marginBottom: 10 }}>ADD STOCK ITEM</div>
+          <label style={lbl}>Item name</label>
+          <input value={newItemName} onChange={e => setNewItemName(e.target.value)} placeholder="New item name" style={inp} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={lbl}>Quantity</label>
+              <input type="number" min={0} value={newQty} onChange={e => setNewQty(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Unit</label>
+              <input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="pcs" style={inp} />
+            </div>
+          </div>
+          <label style={lbl}>Price</label>
+          <input type="number" min={0} value={newPrice} onChange={e => setNewPrice(e.target.value)} placeholder="0.00" style={inp} />
+          <button onClick={addInventoryItem} disabled={invSaving} style={{
+            width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
+            background: "var(--accent)", color: "#fff", fontWeight: 600, fontSize: 14,
+            cursor: "pointer"
+          }}>
+            {invSaving ? "Saving..." : "Add Item"}
+          </button>
+        </div>
       </div>
 
       {/* Toolbar */}
